@@ -23,9 +23,7 @@ package com.aliyun.odps.jdbc;
 import java.io.IOException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import java.util.logging.Logger;
 
 import com.aliyun.odps.data.Record;
 import com.aliyun.odps.tunnel.TableTunnel.DownloadSession;
@@ -34,12 +32,10 @@ import com.aliyun.odps.tunnel.io.TunnelRecordReader;
 
 public class OdpsQueryResultSet extends OdpsResultSet implements ResultSet {
 
+  private Logger log;
   private DownloadSession sessionHandle;
-
   private int fetchSize;
-
   private OdpsStatement.FetchDirection fetchDirection;
-
   private final long totalRows;
 
   /**
@@ -62,11 +58,10 @@ public class OdpsQueryResultSet extends OdpsResultSet implements ResultSet {
 
   private boolean isClosed = false;
 
-  private static Log log = LogFactory.getLog(OdpsQueryResultSet.class);
-
   OdpsQueryResultSet(OdpsStatement stmt, OdpsResultSetMetaData meta, DownloadSession session)
       throws SQLException {
     super(stmt, meta);
+    log = stmt.getParentLogger();
     sessionHandle = session;
     fetchSize = stmt.resultSetFetchSize;
     fetchDirection = stmt.resultSetFetchDirection;
@@ -304,7 +299,7 @@ public class OdpsQueryResultSet extends OdpsResultSet implements ResultSet {
     try {
       long start = System.currentTimeMillis();
       Record reuseRecord = null;
-      TunnelRecordReader reader = sessionHandle.openRecordReader(cachedUpperRow, count);
+      TunnelRecordReader reader = sessionHandle.openRecordReader(cachedUpperRow, count, true);
       for (int i = 0; i < count; i++) {
         reuseRecord = reader.read(reuseRecord);
         int columns = reuseRecord.getColumnCount();
@@ -315,7 +310,7 @@ public class OdpsQueryResultSet extends OdpsResultSet implements ResultSet {
       }
       long duration = System.currentTimeMillis() - start;
       long totalKBytes = reader.getTotalBytes() / 1024;
-      log.debug(String.format("fetch records, start=%d, cnt=%d, %d KB, %.2f KB/s", cachedUpperRow,
+      log.fine(String.format("fetch records, start=%d, cnt=%d, %d KB, %.2f KB/s", cachedUpperRow,
                               count, totalKBytes, (float) totalKBytes / duration * 1000));
       reader.close();
     } catch (TunnelException e) {

@@ -41,25 +41,22 @@ import java.sql.Timestamp;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
-import java.util.IllegalFormatCodePointException;
 import java.util.Map;
-
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import java.util.logging.Logger;
 
 public abstract class OdpsResultSet extends WrapperAdapter implements ResultSet {
 
+  private final Logger log;
   private OdpsResultSetMetaData meta;
   private OdpsStatement stmt;
   private boolean wasNull = false;
 
   private SQLWarning warningChain = null;
 
-  private static Log log = LogFactory.getLog(OdpsResultSet.class);
-
   OdpsResultSet(OdpsStatement stmt, OdpsResultSetMetaData meta) throws SQLException {
     this.stmt = stmt;
     this.meta = meta;
+    this.log = stmt.getParentLogger();
   }
 
   @Override

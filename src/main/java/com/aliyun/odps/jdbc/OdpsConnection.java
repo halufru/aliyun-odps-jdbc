@@ -43,9 +43,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.Executor;
-
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import java.util.logging.ConsoleHandler;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import com.aliyun.odps.Instance;
 import com.aliyun.odps.LogView;
@@ -75,7 +75,10 @@ public class OdpsConnection extends WrapperAdapter implements Connection {
 
   private boolean isClosed = false;
 
-  private static Log log = LogFactory.getLog(OdpsConnection.class);
+  /**
+   * Per-connection logger. All its statements produced by this connection will share this logger
+   */
+  protected final Logger log = Logger.getLogger("com.aliyun.odps.jdbc.OdpsConnection");
 
   private SQLWarning warningChain = null;
 
@@ -89,6 +92,7 @@ public class OdpsConnection extends WrapperAdapter implements Connection {
     String project = connRes.getProject();
     String endpoint = connRes.getEndpoint();
     String logviewHost = connRes.getLogview();
+    String logLevel = connRes.getLogLevel();
 
     int lifecycle;
     try {
@@ -97,15 +101,36 @@ public class OdpsConnection extends WrapperAdapter implements Connection {
       throw new IllegalArgumentException("lifecycle is expected to be an integer");
     }
 
-    log.info(String.format(
-        "OdpsConnection[endpoint=%s, project=%s, charset=%s, logview=%s, lifecycle=%d]",
-        endpoint, project, charset, logviewHost, lifecycle));
+    // Set up the handler's attributes
+    // TODO(onesuper): support file logger later
+    ConsoleHandler consoleHandler = new ConsoleHandler();
+    consoleHandler.setLevel(Level.ALL);
+    consoleHandler.setFormatter(new LogFormatter());
+
+    // Change the state of the root logger
+    if (logLevel.equalsIgnoreCase("fatal") || logLevel.equalsIgnoreCase("severe")) {
+      log.setLevel(Level.SEVERE);
+    } else if (logLevel.equalsIgnoreCase("warning")) {
+      log.setLevel(Level.WARNING);
+    } else if (logLevel.equalsIgnoreCase("debug") || logLevel.equalsIgnoreCase("fine")) {
+      log.setLevel(Level.FINEST);
+    } else {
+      log.setLevel(Level.INFO);
+    }
+    log.setUseParentHandlers(false);
+    log.addHandler(consoleHandler);
+
+    log.info("ODPS JDBC driver, Version " + Utils.retrieveVersion());
+    log.info(String.format("endpoint=%s, project=%s", endpoint, project));
+    log.fine(String.format("charset=%s, logview=%s, lifecycle=%d, loglevel=%s",
+                           charset, logviewHost, lifecycle, logLevel));
 
     Account account = new AliyunAccount(accessId, accessKey);
+    log.fine("debug mode on");
     odps = new Odps(account);
     odps.setEndpoint(endpoint);
     odps.setDefaultProject(project);
-    odps.setUserAgent("odps-jdbc-1.0-beta");
+    odps.setUserAgent("odps-jdbc" + Utils.retrieveVersion());
 
     this.info = info;
     this.charset = charset;
@@ -261,16 +286,22 @@ public class OdpsConnection extends WrapperAdapter implements Connection {
     return false;
   }
 
+  /**
+   * ODPS doesn't support the concept of catalog
+   * Each connection is associated with one endpoint (embedded in the connection url).
+   * Each endpoint has a couple of projects (schema)
+   *
+   * @param catalog
+   * @throws SQLException
+   */
   @Override
   public void setCatalog(String catalog) throws SQLException {
-    checkClosed();
-    odps.setEndpoint(catalog);
+
   }
 
   @Override
   public String getCatalog() throws SQLException {
-    checkClosed();
-    return odps.getEndpoint();
+    return null;
   }
 
   @Override
@@ -465,10 +496,6 @@ public class OdpsConnection extends WrapperAdapter implements Connection {
     return this.odps;
   }
 
-  public String getUrl() {
-    return this.odps.getEndpoint();
-  }
-
   /**
    * Kick-offer
    *
@@ -496,10 +523,11 @@ public class OdpsConnection extends WrapperAdapter implements Connection {
       }
 
       String logViewUrl = logView.generateLogView(instance, 7 * 24);
-      log.info("Run SQL: " + sql + " => Log View: " + logViewUrl);
+      log.fine("Run SQL: " + sql);
+      log.info(logViewUrl);
 
     } catch (OdpsException e) {
-      log.fatal("fail to run sql: " + sql);
+      log.severe("fail to run sql: " + sql);
       throw new SQLException(e);
     }
     return instance;
@@ -517,7 +545,7 @@ public class OdpsConnection extends WrapperAdapter implements Connection {
       long begin = System.currentTimeMillis();
       SQLTask.run(odps, sql).waitForSuccess();
       long end = System.currentTimeMillis();
-      log.debug("It took me " + (end - begin) + " ms to run SQL: " + sql);
+      log.fine("It took me " + (end - begin) + " ms to run SQL: " + sql);
     } catch (OdpsException e) {
       throw new SQLException(e);
     }
